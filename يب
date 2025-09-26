@@ -1,0 +1,71 @@
+name: V2Ray Android Auto Setup
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: تحميل V2Ray
+        run: |
+          powershell -Command "Invoke-WebRequest -Uri 'https://github.com/v2fly/v2ray-core/releases/latest/download/v2ray-windows-64.zip' -OutFile 'v2ray.zip'"
+          powershell -Command "Expand-Archive 'v2ray.zip' -DestinationPath 'C:\v2ray' -Force"
+
+      - name: إنشاء UUID تلقائي
+        id: uuid
+        run: |
+          $uuid = [guid]::NewGuid().ToString()
+          Write-Host "::set-output name=uuid::$uuid"
+
+      - name: إعداد config.json
+        run: |
+          $uuid = '${{ steps.uuid.outputs.uuid }}'
+          echo '{
+            "inbounds": [
+              {
+                "listen": "0.0.0.0",
+                "port": 443,
+                "protocol": "vless",
+                "settings": {
+                  "clients": [
+                    {
+                      "id": "'$uuid'",
+                      "flow": "",
+                      "level": 0
+                    }
+                  ],
+                  "decryption": "none"
+                },
+                "streamSettings": {
+                  "network": "ws",
+                  "security": "tls",
+                  "tlsSettings": {
+                    "allowInsecure": true
+                  },
+                  "wsSettings": {
+                    "path": "/ws"
+                  }
+                }
+              }
+            ],
+            "outbounds": [
+              {
+                "protocol": "freedom"
+              }
+            ],
+            "log": {
+              "loglevel": "warning"
+            }
+          }' > C:\v2ray\config.json
+
+      - name: فتح البورتات في الجدار الناري
+        run: |
+          New-NetFirewallRule -DisplayName "V2Ray Port 443 TCP" -Direction Inbound -LocalPort 443 -Protocol TCP -Action Allow
+          New-NetFirewallRule -DisplayName "V2Ray Port 443 UDP" -Direction Inbound -LocalPort 443 -Protocol UDP -Action Allow
+
+      - name: تشغيل V2Ray
+        run: |
+          Start-Process "C:\v2ray\v2ray.exe" -ArgumentList "run","-config","C:\v2ray\config.json"
